@@ -24,26 +24,9 @@ namespace Proxy
 
         void IProxy.LaunchProxy()
         {
-            // This connects to the server
-            TcpClient proxyClient = new TcpClient();
-
             // This waits for incoming clients
             TcpListener proxyListener = new TcpListener(_src);
             proxyListener.Start();
-
-            
-            // Client setup
-            proxyClient.BeginConnect(
-                    _target.Address,
-                    _target.Port,
-                    _connectCallback,
-                    new ConnectState()
-                    {
-                        Callback = _connectCallback,
-                        Client = proxyClient
-                    }
-                    );
-            // ---
 
             // Listener setup
             proxyListener.BeginAcceptTcpClient(
@@ -52,7 +35,7 @@ namespace Proxy
                     {
                         Callback = _acceptClientsCallback,
                         ProxyListener = proxyListener,
-                        ProxyClient = proxyClient
+                        TcpProxy = this
                     });
             // ---
         }
@@ -215,10 +198,7 @@ namespace Proxy
             /// </summary>
             public TcpListener ProxyListener;
 
-            /// <summary>
-            /// The proxy client instance (local client)
-            /// </summary>
-            public TcpClient ProxyClient;
+            public TcpProxy TcpProxy;
         }
 
         /// <summary>
@@ -234,34 +214,54 @@ namespace Proxy
                 // Re-regist listener asap
                 state.ProxyListener.BeginAcceptTcpClient(state.Callback, state);
 
-                // Get client and stream for reading incoming data
-                TcpClient client = state.ProxyListener.EndAcceptTcpClient(res);
+                // Get remote client
+                TcpClient remoteClient = state.ProxyListener.EndAcceptTcpClient(res);
 
-                Console.WriteLine("TCP: End Accept with (local: {0}, remote: {1})",
-                        client.Client.LocalEndPoint, client.Client.RemoteEndPoint);
-                // --
+                TcpClient localClient = new TcpClient();
 
-                NetworkStream stream = client.GetStream();
-
-                // Setup state
-                ReadStreamState readState = new ReadStreamState()
-                {
-                    Callback = _readStreamCallback,
-                    ReadStreamOwner = client,
-                    ReadStream = stream,
-                    Buffer = new byte[client.ReceiveBufferSize],
-                    Offset = 0,
-                    ClientToReport = state.ProxyClient
+                ConnectState connState = new ConnectState() { 
+                    Callback = _connectCallback,
+                    Client = localClient
                 };
 
-                // Being reading
-                stream.BeginRead(
-                        readState.Buffer,
-                        readState.Offset,
-                        readState.Buffer.Length,
-                        readState.Callback,
-                        readState);
-                //---
+                /*
+                 * After successfully connecting to the real server, start reading requests 
+                 * from the remote client
+                 */
+                connState.ActionAfterConnect = delegate()
+                {
+                    NetworkStream stream = remoteClient.GetStream();
+
+                    // Setup state
+                    ReadStreamState readState = new ReadStreamState()
+                    {
+                        Callback = _readStreamCallback,
+                        ReadStreamOwner = remoteClient,
+                        ReadStream = stream,
+                        Buffer = new byte[remoteClient.ReceiveBufferSize],
+                        Offset = 0,
+                        ClientToReport = localClient
+                    };
+                    
+                    // Being reading
+                    stream.BeginRead(
+                            readState.Buffer,
+                            readState.Offset,
+                            readState.Buffer.Length,
+                            readState.Callback,
+                            readState);
+                    //---
+                };
+
+                /*
+                 * Try to connect to the real server
+                 */
+                connState.Client.BeginConnect(
+                        state.TcpProxy._target.Address,
+                        state.TcpProxy._target.Port,
+                        _connectCallback,
+                        connState);
+                // --                
             }
             catch (Exception e)
             {
@@ -384,19 +384,19 @@ namespace Proxy
                 }
 
                 // Resume reading
-                //NetworkStream stream = state.ReadStreamOwner.GetStream();
+                NetworkStream stream = state.ReadStreamOwner.GetStream();
 
-                //state.Offset = 0;
-                //state.Buffer = new byte[state.ReadStreamOwner.ReceiveBufferSize];
-                //state.ReadStream = stream;
+                state.Offset = 0;
+                state.Buffer = new byte[state.ReadStreamOwner.ReceiveBufferSize];
+                state.ReadStream = stream;
 
-                //stream.BeginRead(
-                //        state.Buffer,
-                //        state.Offset,
-                //        state.Buffer.Length - state.Offset,
-                //        state.Callback,
-                //        state);
-                // --
+                stream.BeginRead(
+                        state.Buffer,
+                        state.Offset,
+                        state.Buffer.Length - state.Offset,
+                        state.Callback,
+                        state);
+                 // --
             }
             catch (Exception e)
             {
