@@ -5,6 +5,7 @@ using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.IO;
 
 namespace Proxy
 {
@@ -30,7 +31,7 @@ namespace Proxy
             TcpListener proxyListener = new TcpListener(_src);
             proxyListener.Start();
 
-
+            
             // Client setup
             proxyClient.BeginConnect(
                     _target.Address,
@@ -99,23 +100,70 @@ namespace Proxy
         {
             try
             {
-                NetworkStream stream = remoteClient.GetStream();
-                ReadStreamState readState = new ReadStreamState()
+                NetworkStream stream = null;
+                try
                 {
-                    Callback = _readStreamCallback,
-                    ReadStreamOwner = remoteClient,
-                    ClientToReport = localClient,
-                    Buffer = new byte[remoteClient.ReceiveBufferSize],
-                    Offset = 0,
-                    ReadStream = stream
-                };
-                stream.BeginRead(
-                        readState.Buffer,
-                        readState.Offset,
-                        readState.Buffer.Length,
-                        readState.Callback,
-                        readState);
-                //--
+                    stream = remoteClient.GetStream();
+                    //}
+                    //catch (Exception e)
+                    //{
+                    //    Console.ReadKey();
+                    //    return; // Exit, without retrying
+                    //}
+
+                    ReadStreamState readState = new ReadStreamState()
+                    {
+                        Callback = _readStreamCallback,
+                        ReadStreamOwner = remoteClient,
+                        ClientToReport = localClient,
+                        Buffer = new byte[remoteClient.ReceiveBufferSize],
+                        Offset = 0,
+                        ReadStream = stream
+                    };
+
+                    //try
+                    //{
+                    // Begin write. Resume reading will be done in the callback.
+                    stream.BeginRead(
+                            readState.Buffer,
+                            readState.Offset,
+                            readState.Buffer.Length,
+                            readState.Callback,
+                            readState);
+                    //--
+                }
+                catch (IOException ioEx)
+                {
+                    if (remoteClient.Connected)
+                    {
+                        Console.ReadKey();
+                    }
+                    else
+                    {
+                        // Connect, after connected, try to send again.
+                        ConnectState connState = new ConnectState()
+                        {
+                            Callback = _connectCallback,
+                            Client = new TcpClient()
+                        };
+
+                        connState.ActionAfterConnect = delegate()
+                        {
+                            StartReadingRemote(connState.Client, localClient);
+                        };
+
+                        connState.Client.BeginConnect(
+                                IPAddress.Parse("192.168.23.167"),
+                                8000,
+                                connState.Callback,
+                                connState);
+                        //---
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.ReadKey();
+                }
             }
             catch (Exception e)
             {
@@ -139,49 +187,7 @@ namespace Proxy
                         state.WriteStreamOwner.Client.RemoteEndPoint);
                 //---
 
-                // Check if state.WriteStreamOwner is Connected.
-                // if not, reconnect
-                if (!state.WriteStreamOwner.Connected)
-                {
-                    ConnectState connState = new ConnectState()
-                    {
-                        Callback = _connectCallback,
-                        Client = state.WriteStreamOwner,
-                        ActionAfterConnect = delegate()
-                        {
-                            StartReadingRemote(state.WriteStreamOwner, state.ClientToReport);
-                        }
-                    };
-
-                    state.WriteStreamOwner.BeginConnect(
-                            "",
-                            123,
-                            _connectCallback,
-                            connState);
-                    //---
-                }
-                else
-                {
-                    StartReadingRemote(state.WriteStreamOwner, state.ClientToReport);
-
-                    //NetworkStream stream = state.WriteStreamOwner.GetStream();
-                    //ReadStreamState readState = new ReadStreamState()
-                    //{
-                    //    Callback = _readStreamCallback,
-                    //    ReadStreamOwner = state.WriteStreamOwner,
-                    //    ClientToReport = state.ClientToReport,
-                    //    Buffer = new byte[state.WriteStreamOwner.ReceiveBufferSize],
-                    //    Offset = 0,
-                    //    ReadStream = stream
-                    //};
-                    //stream.BeginRead(
-                    //        readState.Buffer,
-                    //        readState.Offset,
-                    //        readState.Buffer.Length,
-                    //        readState.Callback,
-                    //        readState);
-                    ////--
-                }
+                StartReadingRemote(state.WriteStreamOwner, state.ClientToReport);
             }
             catch (Exception e)
             {
@@ -278,7 +284,71 @@ namespace Proxy
             public TcpClient ClientToReport;
         }
 
+        private static void StartWritingRemote(TcpClient clientWriter, TcpClient clientToReport, byte[] data)
+        {
+            try
+            {
+                NetworkStream clientStream = null;
+                try
+                {
+                    // Can raise InvalidOperationException if tcpclient is disconnected
+                    clientStream = clientWriter.GetStream();
+                    
+                    // TODO: This might raise an exception, put in a try-catch
+                    WriteStreamState writeState = new WriteStreamState()
+                    {
+                        Callback = _writeStreamCallback,
+                        WriteStreamOwner = clientWriter,
+                        WriteStream = clientStream,
+                        Offset = 0,
+                        Buffer = data,
+                        ClientToReport = clientToReport
+                    };
 
+                    // Begin write. Resume reading will be done in the callback.
+                    // Can raise IOException if tcpclient is disconnected
+                    clientStream.BeginWrite(
+                            writeState.Buffer,
+                            writeState.Offset,
+                            writeState.Buffer.Length,
+                            writeState.Callback,
+                            writeState);
+                    //---
+                }
+                catch (Exception e)
+                {
+                    if (clientWriter.Connected)
+                    {
+                        Console.ReadKey();
+                    }
+                    else
+                    {
+                        // Connect new TcpClient, drop the current one, after connected, try to send again.
+                        ConnectState connState = new ConnectState()
+                        {
+                            Callback = _connectCallback,
+                            Client = new TcpClient()
+                        };
+
+                        connState.ActionAfterConnect = delegate()
+                        {
+                            StartWritingRemote(connState.Client, clientToReport, data);
+                        };
+
+                        connState.Client.BeginConnect(
+                                IPAddress.Parse("192.168.23.167"),
+                                8000,
+                                connState.Callback,
+                                connState);
+                        //---
+                    }
+                }               
+            }
+            catch (Exception e)
+            {
+                Console.ReadKey();
+            }
+        }
 
 
         /// <summary>
@@ -294,58 +364,39 @@ namespace Proxy
 
                 // End reading
                 int count = state.ReadStream.EndRead(res);
+
                 Console.WriteLine("TCP: End Read with (local: {0}, remote: {1}, count: {2})",
                         state.ReadStreamOwner.Client.LocalEndPoint,
                         state.ReadStreamOwner.Client.RemoteEndPoint,
                         count);
                 //---
 
-                //if (count > 0)
-                //{
-                // Writing to proxy client.
-                NetworkStream clientStream = state.ClientToReport.GetStream();
-                byte[] writeBuffer = new byte[count];
-
-                // Copy buffer
-                Array.Copy(state.Buffer, writeBuffer, count);
-
-                // Write to server
-                WriteStreamState writeState = new WriteStreamState()
+                if (count > 0)
                 {
-                    Callback = _writeStreamCallback,
-                    WriteStreamOwner = state.ClientToReport,
-                    WriteStream = clientStream,
-                    Offset = 0,
-                    Buffer = writeBuffer,
-                    ClientToReport = state.ReadStreamOwner
-                };
+                    // Writing to proxy client.           
+                    byte[] writeBuffer = new byte[count];
 
-                // Being write. Resume reading will be done in the callback.
-                clientStream.BeginWrite(
-                        writeState.Buffer,
-                        writeState.Offset,
-                        writeState.Buffer.Length,
-                        writeState.Callback,
-                        writeState);
-                //---                    
-                /*}
-                else
-                {
-                    // Just resume reading
-                    NetworkStream stream = state.ReadStreamOwner.GetStream();
+                    // Copy buffer
+                    Array.Copy(state.Buffer, writeBuffer, count);
 
-                    state.Offset = 0;
-                    state.Buffer = new byte[state.ReadStreamOwner.ReceiveBufferSize];
-                    state.ReadStream = stream;
+                    // Starts writing and waiting for response
+                    StartWritingRemote(state.ClientToReport, state.ReadStreamOwner, writeBuffer);
+                }
 
-                    stream.BeginRead(
-                            state.Buffer,
-                            state.Offset,
-                            state.Buffer.Length - state.Offset,
-                            state.Callback,
-                            state);
-                    // --
-                }*/
+                // Resume reading
+                //NetworkStream stream = state.ReadStreamOwner.GetStream();
+
+                //state.Offset = 0;
+                //state.Buffer = new byte[state.ReadStreamOwner.ReceiveBufferSize];
+                //state.ReadStream = stream;
+
+                //stream.BeginRead(
+                //        state.Buffer,
+                //        state.Offset,
+                //        state.Buffer.Length - state.Offset,
+                //        state.Callback,
+                //        state);
+                // --
             }
             catch (Exception e)
             {
