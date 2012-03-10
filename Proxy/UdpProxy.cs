@@ -9,6 +9,9 @@ using System.Diagnostics;
 
 namespace Proxy
 {
+    /// <summary>
+    /// Half-duplex UDP Proxy, dispatches UDP packets from src to target (but not vice-versa!).
+    /// </summary>
     public class UdpProxy : IProxy
     {
 
@@ -50,16 +53,19 @@ namespace Proxy
             {
 
                 UdpClient client = new UdpClient(_src);
-                //UdpClient server = new UdpClient(_target);
-                Socket server = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 
+                Socket server = new Socket(
+                        AddressFamily.InterNetwork, 
+                        SocketType.Dgram, 
+                        ProtocolType.Udp);
+                // ---
+
                 AsyncCallback clientCallback = null;
 
                 AsyncCallback serverCallback = null;
 
                 // TODO: Only done once ... even so, put his in assync! :D
                 server.Connect(_target);
-                               
 
                 serverCallback = delegate(IAsyncResult res)
                 {

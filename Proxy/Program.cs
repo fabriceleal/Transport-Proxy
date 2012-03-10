@@ -78,7 +78,6 @@ namespace Proxy
 
             Console.WriteLine("INFO: Press *any key* to end");
             Console.ReadKey();
-
         }
 
         static void ReadSrcAndTargetAndQueueIProxy(
