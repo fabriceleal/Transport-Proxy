@@ -12,7 +12,6 @@ namespace Proxy
     public class UdpProxy : IProxy
     {
 
-        private Thread _proxy;
         private IPEndPoint _src;
         private IPEndPoint _target;
 
@@ -20,14 +19,8 @@ namespace Proxy
         {
             _src = src;
             _target = target;
-
-            //_proxy = new Thread(new ThreadStart(ProxyMethod));
-            //_proxy.IsBackground = true;
-            //_proxy.Start();
-            //ProxyMethod();
         }
-
-
+        
         private bool _alreadyCalledProxyMethod = false;
 
         Protocol IProxy.GetProtocol()
