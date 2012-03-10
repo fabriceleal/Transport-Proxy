@@ -35,7 +35,7 @@ namespace Proxy
                     {
                         Callback = _acceptClientsCallback,
                         ProxyListener = proxyListener,
-                        TcpProxy = this
+                        Proxy = this
                     });
             // ---
         }
@@ -75,9 +75,12 @@ namespace Proxy
             public byte[] Buffer;
             public int Offset;
             public TcpClient ClientToReport;
+
+            public TcpProxy Proxy;
         }
 
         public static void StartReadingRemote(
+                TcpProxy proxy,
                 TcpClient remoteClient,
                 TcpClient localClient)
         {
@@ -87,12 +90,6 @@ namespace Proxy
                 try
                 {
                     stream = remoteClient.GetStream();
-                    //}
-                    //catch (Exception e)
-                    //{
-                    //    Console.ReadKey();
-                    //    return; // Exit, without retrying
-                    //}
 
                     ReadStreamState readState = new ReadStreamState()
                     {
@@ -101,11 +98,10 @@ namespace Proxy
                         ClientToReport = localClient,
                         Buffer = new byte[remoteClient.ReceiveBufferSize],
                         Offset = 0,
-                        ReadStream = stream
+                        ReadStream = stream,
+                        Proxy = proxy
                     };
 
-                    //try
-                    //{
                     // Begin write. Resume reading will be done in the callback.
                     stream.BeginRead(
                             readState.Buffer,
@@ -132,7 +128,7 @@ namespace Proxy
 
                         connState.ActionAfterConnect = delegate()
                         {
-                            StartReadingRemote(connState.Client, localClient);
+                            StartReadingRemote(proxy, connState.Client, localClient);
                         };
 
                         connState.Client.BeginConnect(
@@ -170,7 +166,7 @@ namespace Proxy
                         state.WriteStreamOwner.Client.RemoteEndPoint);
                 //---
 
-                StartReadingRemote(state.WriteStreamOwner, state.ClientToReport);
+                StartReadingRemote(state.Proxy, state.WriteStreamOwner, state.ClientToReport);
             }
             catch (Exception e)
             {
@@ -198,7 +194,7 @@ namespace Proxy
             /// </summary>
             public TcpListener ProxyListener;
 
-            public TcpProxy TcpProxy;
+            public TcpProxy Proxy;
         }
 
         /// <summary>
@@ -230,35 +226,38 @@ namespace Proxy
                  */
                 connState.ActionAfterConnect = delegate()
                 {
-                    NetworkStream stream = remoteClient.GetStream();
+                    StartReadingRemote(state.Proxy, remoteClient, localClient);
 
-                    // Setup state
-                    ReadStreamState readState = new ReadStreamState()
-                    {
-                        Callback = _readStreamCallback,
-                        ReadStreamOwner = remoteClient,
-                        ReadStream = stream,
-                        Buffer = new byte[remoteClient.ReceiveBufferSize],
-                        Offset = 0,
-                        ClientToReport = localClient
-                    };
+                    //NetworkStream stream = remoteClient.GetStream();
+
+                    //// Setup state
+                    //ReadStreamState readState = new ReadStreamState()
+                    //{
+                    //    Callback = _readStreamCallback,
+                    //    ReadStreamOwner = remoteClient,
+                    //    ReadStream = stream,
+                    //    Buffer = new byte[remoteClient.ReceiveBufferSize],
+                    //    Offset = 0,
+                    //    ClientToReport = localClient,
+                    //    Proxy = state.Proxy
+                    //};
                     
-                    // Being reading
-                    stream.BeginRead(
-                            readState.Buffer,
-                            readState.Offset,
-                            readState.Buffer.Length,
-                            readState.Callback,
-                            readState);
-                    //---
+                    //// Being reading
+                    //stream.BeginRead(
+                    //        readState.Buffer,
+                    //        readState.Offset,
+                    //        readState.Buffer.Length,
+                    //        readState.Callback,
+                    //        readState);
+                    ////---
                 };
 
                 /*
                  * Try to connect to the real server
                  */
                 connState.Client.BeginConnect(
-                        state.TcpProxy._target.Address,
-                        state.TcpProxy._target.Port,
+                        state.Proxy._target.Address,
+                        state.Proxy._target.Port,
                         _connectCallback,
                         connState);
                 // --                
@@ -269,6 +268,8 @@ namespace Proxy
                 Console.ReadKey();
             }
         }
+
+
 
         private class ReadStreamState
         {
@@ -282,9 +283,15 @@ namespace Proxy
             public int Offset;
 
             public TcpClient ClientToReport;
+
+            public TcpProxy Proxy;
         }
 
-        private static void StartWritingRemote(TcpClient clientWriter, TcpClient clientToReport, byte[] data)
+        private static void StartWritingRemote(
+                TcpProxy proxy, 
+                TcpClient clientWriter, 
+                TcpClient clientToReport, 
+                byte[] data)
         {
             try
             {
@@ -302,7 +309,8 @@ namespace Proxy
                         WriteStream = clientStream,
                         Offset = 0,
                         Buffer = data,
-                        ClientToReport = clientToReport
+                        ClientToReport = clientToReport,
+                        Proxy = proxy
                     };
 
                     // Begin write. Resume reading will be done in the callback.
@@ -332,7 +340,7 @@ namespace Proxy
 
                         connState.ActionAfterConnect = delegate()
                         {
-                            StartWritingRemote(connState.Client, clientToReport, data);
+                            StartWritingRemote(proxy, connState.Client, clientToReport, data);
                         };
 
                         connState.Client.BeginConnect(
@@ -380,23 +388,25 @@ namespace Proxy
                     Array.Copy(state.Buffer, writeBuffer, count);
 
                     // Starts writing and waiting for response
-                    StartWritingRemote(state.ClientToReport, state.ReadStreamOwner, writeBuffer);
+                    StartWritingRemote(state.Proxy, state.ClientToReport, state.ReadStreamOwner, writeBuffer);
                 }
 
                 // Resume reading
-                NetworkStream stream = state.ReadStreamOwner.GetStream();
+                StartReadingRemote(state.Proxy, state.ReadStreamOwner, state.ClientToReport);
 
-                state.Offset = 0;
-                state.Buffer = new byte[state.ReadStreamOwner.ReceiveBufferSize];
-                state.ReadStream = stream;
+                //NetworkStream stream = state.ReadStreamOwner.GetStream();
 
-                stream.BeginRead(
-                        state.Buffer,
-                        state.Offset,
-                        state.Buffer.Length - state.Offset,
-                        state.Callback,
-                        state);
-                 // --
+                //state.Offset = 0;
+                //state.Buffer = new byte[state.ReadStreamOwner.ReceiveBufferSize];
+                //state.ReadStream = stream;
+
+                //stream.BeginRead(
+                //        state.Buffer,
+                //        state.Offset,
+                //        state.Buffer.Length - state.Offset,
+                //        state.Callback,
+                //        state);
+                // // --
             }
             catch (Exception e)
             {
