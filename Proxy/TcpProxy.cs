@@ -58,12 +58,19 @@ namespace Proxy
         /// <param name="res"></param>
         private static void Connect(IAsyncResult res)
         {
-            ConnectState state = res.AsyncState as ConnectState;
-            state.Client.EndConnect(res);
-
-            if (state.ActionAfterConnect != null)
+            try
             {
-                state.ActionAfterConnect();
+                ConnectState state = res.AsyncState as ConnectState;
+                state.Client.EndConnect(res);
+
+                if (state.ActionAfterConnect != null)
+                {
+                    state.ActionAfterConnect();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.ReadKey();
             }
         }
 
@@ -131,9 +138,10 @@ namespace Proxy
                             StartReadingRemote(proxy, connState.Client, localClient);
                         };
 
+                        // FIXME: Depends if writing is being done on proxy client or proxy server ...
                         connState.Client.BeginConnect(
-                                IPAddress.Parse("192.168.23.167"),
-                                8000,
+                                proxy._target.Address,
+                                proxy._target.Port,
                                 connState.Callback,
                                 connState);
                         //---
@@ -343,9 +351,10 @@ namespace Proxy
                             StartWritingRemote(proxy, connState.Client, clientToReport, data);
                         };
 
+                        // FIXME: Depends if writing is being done on proxy client or proxy server ...
                         connState.Client.BeginConnect(
-                                IPAddress.Parse("192.168.23.167"),
-                                8000,
+                                proxy._target.Address,
+                                proxy._target.Port,
                                 connState.Callback,
                                 connState);
                         //---
