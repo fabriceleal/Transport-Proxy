@@ -70,6 +70,7 @@ namespace Proxy
             }
             catch (Exception e)
             {
+                Console.WriteLine("EXCEPTION: Connect callback: {0}", e.Message);
                 Console.ReadKey();
             }
         }
@@ -122,6 +123,7 @@ namespace Proxy
                 {
                     if (remoteClient.Connected)
                     {
+                        Console.WriteLine("IO EXCEPTION: StartReadingRemote head: {0}", ioEx.Message);
                         Console.ReadKey();
                     }
                     else
@@ -149,11 +151,13 @@ namespace Proxy
                 }
                 catch (Exception e)
                 {
+                    Console.WriteLine("EXCEPTION: StartReadingRemote head: {0}", e.Message);
                     Console.ReadKey();
                 }
             }
             catch (Exception e)
             {
+                Console.WriteLine("EXCEPTION: StartReadingRemote tail: {0}", e.Message);
                 Console.ReadKey();
             }
         }
@@ -169,10 +173,12 @@ namespace Proxy
                 WriteStreamState state = res.AsyncState as WriteStreamState;
                 state.WriteStream.EndWrite(res);
 
+#if DEBUG
                 Console.WriteLine("TCP: End Write with (local: {0}, remote: {1})",
                         state.WriteStreamOwner.Client.LocalEndPoint,
                         state.WriteStreamOwner.Client.RemoteEndPoint);
                 //---
+#endif
 
                 StartReadingRemote(state.Proxy, state.WriteStreamOwner, state.ClientToReport);
             }
@@ -335,6 +341,7 @@ namespace Proxy
                 {
                     if (clientWriter.Connected)
                     {
+                        Console.WriteLine("EXCEPTION: StartWritingRemote head: {0}", e.Message);
                         Console.ReadKey();
                     }
                     else
@@ -363,6 +370,7 @@ namespace Proxy
             }
             catch (Exception e)
             {
+                Console.WriteLine("EXCEPTION: StartWritingRemote tail: {0}", e.Message);
                 Console.ReadKey();
             }
         }
@@ -381,12 +389,13 @@ namespace Proxy
 
                 // End reading
                 int count = state.ReadStream.EndRead(res);
-
+#if DEBUG
                 Console.WriteLine("TCP: End Read with (local: {0}, remote: {1}, count: {2})",
                         state.ReadStreamOwner.Client.LocalEndPoint,
                         state.ReadStreamOwner.Client.RemoteEndPoint,
                         count);
                 //---
+#endif
 
                 if (count > 0)
                 {
@@ -402,20 +411,6 @@ namespace Proxy
 
                 // Resume reading
                 StartReadingRemote(state.Proxy, state.ReadStreamOwner, state.ClientToReport);
-
-                //NetworkStream stream = state.ReadStreamOwner.GetStream();
-
-                //state.Offset = 0;
-                //state.Buffer = new byte[state.ReadStreamOwner.ReceiveBufferSize];
-                //state.ReadStream = stream;
-
-                //stream.BeginRead(
-                //        state.Buffer,
-                //        state.Offset,
-                //        state.Buffer.Length - state.Offset,
-                //        state.Callback,
-                //        state);
-                // // --
             }
             catch (Exception e)
             {
